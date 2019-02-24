@@ -19,21 +19,18 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\..\impl\Clevo.c" />
-    <ClCompile Include="..\..\..\..\impl\Kbled.c" />
-    <ClCompile Include="..\..\..\..\impl\_Clevo.c" />
-    <ClCompile Include="..\..\..\..\impl\_WbemErr.c" />
+    <ClCompile Include="..\..\..\..\server\Clevo\Impl\Clevo.c" />
+    <ClCompile Include="..\..\..\..\server\Clevo\Impl\Kbled.c" />
     <ClCompile Include="..\..\src\main.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\..\client\raymai\Clevo\Clevo.h" />
+    <ClInclude Include="..\..\..\..\client\raymai\Clevo.h" />
     <ClInclude Include="..\..\..\..\client\raymai\Clevo\Kbled.h" />
-    <ClInclude Include="..\..\..\..\impl\Clevo.h" />
-    <ClInclude Include="..\..\..\..\impl\Clevo_.h" />
-    <ClInclude Include="..\..\..\..\impl\Kbled.h" />
-    <ClInclude Include="..\..\..\..\impl\_Base.h" />
-    <ClInclude Include="..\..\..\..\impl\_Clevo.h" />
-    <ClInclude Include="..\..\..\..\impl\_WbemErr.h" />
+    <ClInclude Include="..\..\..\..\server\Clevo.h" />
+    <ClInclude Include="..\..\..\..\server\Clevo\Impl\Base.h" />
+    <ClInclude Include="..\..\..\..\server\Clevo\Impl\Clevo.h" />
+    <ClInclude Include="..\..\..\..\server\Clevo\Impl\Kbled.h" />
+    <ClInclude Include="..\..\..\..\server\Clevo\Kbled.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>

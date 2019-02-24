@@ -1,16 +1,5 @@
-#include "_Clevo.h"
-#include <WbemIdl.h>
-#include <WMIUtils.h>
-
-#define MY_SafeFree  MODULE__SafeFree
-#define MY_SafeFreeCOM  MODULE__SafeFreeCOM
-
-static HRESULT MyNewBSTR(BSTR *pbstr, LPCWSTR psz)
-{
-	BSTR bstr = SysAllocString(psz);
-	if (bstr) { *pbstr = bstr; }
-	return bstr ? S_OK : E_OUTOFMEMORY;
-}
+#include "Base.h"
+#include "Clevo.h"
 
 static HRESULT MyWbemNewPath(IWbemPath **ppPath)
 {
@@ -36,7 +25,7 @@ static HRESULT MyWbemNewSvc(IWbemServices **ppSvc, LPCWSTR pszNamesp)
 	HRESULT hr = 0;
 	BSTR bstrNamesp = NULL;
 	IWbemLocator *pLocator = NULL;
-	hr = MyNewBSTR(&bstrNamesp, pszNamesp);
+	hr = New_BSTR(&bstrNamesp, pszNamesp);
 	if (FAILED(hr)) goto eof;
 	hr = CoCreateInstance(&CLSID_WbemLocator, NULL, CLSCTX_INPROC_SERVER,
 		&IID_IWbemLocator, (void**)&pLocator);
@@ -44,8 +33,8 @@ static HRESULT MyWbemNewSvc(IWbemServices **ppSvc, LPCWSTR pszNamesp)
 	hr = pLocator->lpVtbl->ConnectServer(pLocator, bstrNamesp, NULL, NULL, NULL,
 		WBEM_FLAG_CONNECT_USE_MAX_WAIT, NULL, NULL, ppSvc);
 eof:
-	MY_SafeFreeCOM(pLocator);
-	MY_SafeFree(bstrNamesp, SysFreeString);
+	SafeFreeCOM(pLocator);
+	SafeFree(bstrNamesp, Del_BSTR);
 	return hr;
 }
 
@@ -54,14 +43,16 @@ static HRESULT MyWbemSvcGetObject(
 {
 	HRESULT hr = 0;
 	BSTR bstrPath = NULL;
-	hr = MyNewBSTR(&bstrPath, pszPath);
+	hr = New_BSTR(&bstrPath, pszPath);
 	if (FAILED(hr)) goto eof;
 	hr = pSvc->lpVtbl->GetObject(pSvc, bstrPath,
 		WBEM_FLAG_RETURN_WBEM_COMPLETE, NULL, ppObj, NULL);
 eof:
-	MY_SafeFree(bstrPath, SysFreeString);
+	SafeFree(bstrPath, Del_BSTR);
 	return hr;
 }
+
+WSL_Declare(Mywsl_WQL, "WQL");
 
 static HRESULT MyWbemSvcExecQuery(
 	IWbemServices *pSvc, LPCWSTR pszQuery, IEnumWbemClassObject **ppEnum)
@@ -69,118 +60,137 @@ static HRESULT MyWbemSvcExecQuery(
 	HRESULT hr = 0;
 	BSTR bstrLang = NULL;
 	BSTR bstrQuery = NULL;
-	hr = MyNewBSTR(&bstrLang, L"WQL");
+	hr = New_BSTR(&bstrLang, Mywsl_WQL());
 	if (FAILED(hr)) goto eof;
-	hr = MyNewBSTR(&bstrQuery, pszQuery);
+	hr = New_BSTR(&bstrQuery, pszQuery);
 	if (FAILED(hr)) goto eof;
 	hr = pSvc->lpVtbl->ExecQuery(pSvc, bstrLang, bstrQuery,
 		WBEM_FLAG_FORWARD_ONLY, NULL, ppEnum);
 eof:
-	MY_SafeFree(bstrQuery, SysFreeString);
-	MY_SafeFree(bstrLang, SysFreeString);
+	SafeFree(bstrQuery, Del_BSTR);
+	SafeFree(bstrLang, Del_BSTR);
 	return hr;
 }
 
-/*
-	Get full path to the class or instance, including server and namespace.
-*/
+WSL_Declare(Mywsl___PATH, "__PATH");
+
 static HRESULT MyWbemObjGetPath(
 	IWbemClassObject *pObj, BSTR *pbstrPath)
 {
 	VARIANT v; CIMTYPE type; LONG flavor;
-	HRESULT hr = pObj->lpVtbl->Get(pObj, L"__PATH", 0, &v, &type, &flavor);
+	HRESULT hr = pObj->lpVtbl->Get(pObj, Mywsl___PATH(), 0, &v, &type, &flavor);
 	if (SUCCEEDED(hr)) {
 		*pbstrPath = v.bstrVal;
 	}
 	return hr;
 }
 
-struct RaymaiClevo__ {
-	BOOL coinit;
-	IWbemServices *pSvc;
-	IWbemClassObject *pClevo;
-	BSTR bstrInstPath;
-	BSTR bstrSetKBLED;
-};
-typedef RaymaiClevo__ Self;
 
-HRESULT RaymaiClevo__New(Self **ppSelf)
+typedef struct MySelf MySelf;
+struct MySelf {
+	IRaymaiClevo I;
+	SRaymaiClevo S;
+};
+
+#define MY_0A  IRaymaiClevo const * const pIClevo
+#define MY_0B  IRaymaiClevo * const pIClevo
+#define MY_0AdSelf  MySelf const * const pSelf = (MySelf*)pIClevo
+#define MY_0BdSelf  MySelf * const pSelf = (MySelf*)pIClevo
+
+static UINT MyAPI_GetVersion(MY_0A);
+static HRESULT MyAPI_Exec1(MY_0A, BSTR bstrMethod, DWORD dwData);
+
+static IRaymaiClevo const s_IRaymaiClevo = {
+	MyAPI_GetVersion,
+	MyAPI_Exec1
+};
+
+static UINT MyAPI_GetVersion(MY_0A)
+{
+	UNUSED_PARAM(pIClevo);
+	return 1;
+}
+
+WSL_Declare(Mywsl_Data, "Data");
+
+static HRESULT MyAPI_Exec1(MY_0A, BSTR bstrMethod, DWORD dwData)
+{
+	MY_0AdSelf;
+	IWbemClassObject * const pClevo = pSelf->S.pClevo;
+	IWbemServices * const pSvc = pSelf->S.pSvc;
+	BSTR const bstrInstance = pSelf->S.bstrInstance;
+	HRESULT hr = 0;
+	VARIANT vt;
+	vt.vt = VT_I4;
+	vt.lVal = (LONG)dwData;
+	hr = pClevo->lpVtbl->Put(pClevo, Mywsl_Data(), 0, &vt, CIM_EMPTY);
+	if (FAILED(hr)) goto eof;
+	hr = pSvc->lpVtbl->ExecMethod(pSvc, bstrInstance,
+		bstrMethod, 0L, NULL, pClevo, NULL, NULL);
+eof:
+	return hr;
+}
+
+WSL_Declare(Mywsl_root_WMI, "root\\WMI");
+WSL_Declare(Mywsl_CLEVO_GET, "CLEVO_GET");
+WSL_Declare(Mywsl_SELECT_ALL_CLEVO_GET, "SELECT * FROM CLEVO_GET");
+
+HRESULT New_RaymaiClevo(
+	IRaymaiClevo **ppClevo)
 {
 	HRESULT hr = 0;
-	Self *pSelf = NULL;
+	MySelf *pSelf = NULL;
 	IWbemPath *pScope = NULL;
 	WCHAR szNamsp[MAX_PATH] = { 0 };
 	IEnumWbemClassObject *pEnum = NULL;
 	IWbemClassObject *pEnumO = NULL;
 	ULONG nEnumReturn = 0;
 
-	pSelf = MemAllocZero(sizeof(*pSelf));
+	pSelf = RAYMAI_CLEVO_MALLOC0(sizeof(*pSelf));
 	if (!pSelf) { hr = E_OUTOFMEMORY; goto eof; }
-	pSelf->coinit = SUCCEEDED(CoInitialize(NULL));
+	pSelf->S.coinit = SUCCEEDED(CoInitialize(NULL));
 
 	hr = MyWbemNewPath(&pScope);
 	if (FAILED(hr)) goto eof;
-	hr = MyWbemPathSetPath(pScope, L"root\\WMI");
+	hr = MyWbemPathSetPath(pScope, Mywsl_root_WMI());
 	if (FAILED(hr)) goto eof;
 	hr = MyWbemPathGetNamespace(pScope, szNamsp);
 	if (FAILED(hr)) goto eof;
 
-	hr = MyWbemNewSvc(&pSelf->pSvc, szNamsp);
+	hr = MyWbemNewSvc(&pSelf->S.pSvc, szNamsp);
 	if (FAILED(hr)) goto eof;
 
-	hr = CoSetProxyBlanket(((IUnknown*)pSelf->pSvc),
+	hr = CoSetProxyBlanket((IUnknown*)(pSelf->S.pSvc),
 		RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, NULL,
 		RPC_C_AUTHN_LEVEL_CONNECT, RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE);
 	if (FAILED(hr)) goto eof;
 
-	hr = MyWbemSvcGetObject(pSelf->pSvc, L"CLEVO_GET", &pSelf->pClevo);
+	hr = MyWbemSvcGetObject(pSelf->S.pSvc, Mywsl_CLEVO_GET(), &pSelf->S.pClevo);
 	if (FAILED(hr)) goto eof;
 
-	hr = MyWbemSvcExecQuery(pSelf->pSvc, L"SELECT * FROM CLEVO_GET", &pEnum);
+	hr = MyWbemSvcExecQuery(pSelf->S.pSvc, Mywsl_SELECT_ALL_CLEVO_GET(), &pEnum);
 	if (FAILED(hr)) goto eof;
 	hr = pEnum->lpVtbl->Next(pEnum, WBEM_NO_WAIT, 1, &pEnumO, &nEnumReturn);
 	if (FAILED(hr)) goto eof;
 	if (nEnumReturn == 0) {
 		hr = HRESULT_FROM_WIN32(ERROR_NOT_FOUND); goto eof;
 	}
-	hr = MyWbemObjGetPath(pEnumO, &pSelf->bstrInstPath);
-	if (FAILED(hr)) goto eof;
-	hr = MyNewBSTR(&pSelf->bstrSetKBLED, L"SetKBLED");
+	hr = MyWbemObjGetPath(pEnumO, &pSelf->S.bstrInstance);
 	if (FAILED(hr)) goto eof;
 
-	*ppSelf = pSelf;
+	pSelf->I = s_IRaymaiClevo;
+	*ppClevo = &pSelf->I;
 eof:
-	MY_SafeFreeCOM(pEnumO);
-	MY_SafeFreeCOM(pEnum);
-	MY_SafeFreeCOM(pScope);
-	if (FAILED(hr)) {
-		RaymaiClevo__Del(pSelf);
-	}
 	return hr;
 }
 
-void RaymaiClevo__Del(Self *pSelf)
+void Del_RaymaiClevo(
+	IRaymaiClevo *pIClevo)
 {
-	if (pSelf) {
-		MY_SafeFree(pSelf->bstrSetKBLED, SysFreeString);
-		MY_SafeFree(pSelf->bstrInstPath, SysFreeString);
-		MY_SafeFreeCOM(pSelf->pClevo);
-		MY_SafeFreeCOM(pSelf->pSvc);
-		if (pSelf->coinit) { CoUninitialize(); }
-		MemFree(pSelf);
-	}
-}
-
-HRESULT RaymaiClevo__SetKBLED(Self *pSelf, DWORD dwData)
-{
-	HRESULT hr = 0;
-	VARIANT vt;
-	vt.vt = VT_I4;
-	vt.lVal = (LONG)dwData;
-	hr = pSelf->pClevo->lpVtbl->Put(pSelf->pClevo, L"Data", 0, &vt, CIM_EMPTY);
-	if (FAILED(hr)) goto eof;
-	hr = pSelf->pSvc->lpVtbl->ExecMethod(pSelf->pSvc, pSelf->bstrInstPath,
-		pSelf->bstrSetKBLED, 0, NULL, pSelf->pClevo, NULL, NULL);
-eof:
-	return hr;
+	MY_0BdSelf;
+	SafeFree(pSelf->S.bstrInstance, SysFreeString);
+	SafeFreeCOM(pSelf->S.pClevo);
+	SafeFreeCOM(pSelf->S.pSvc);
+	if (pSelf->S.coinit) { CoUninitialize(); }
+	RAYMAI_CLEVO_MEMFREE(pSelf);
 }

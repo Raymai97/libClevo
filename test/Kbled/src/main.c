@@ -6,6 +6,16 @@
 #define SAFEFREE(p, fn) \
 	if (p) { fn(p); (p) = NULL; }
 
+static void * MemAllocZero(SIZE_T cb)
+{
+	return HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, cb);
+}
+
+static void MemFree(void *ptr)
+{
+	HeapFree(GetProcessHeap(), 0, ptr);
+}
+
 enum { MaxInput = 99 };
 static char s_szInput[MaxInput] = { 0 };
 
@@ -50,43 +60,23 @@ static int MyGetInputParseInt(int *pVal, int minVal, int maxVal)
 	return -1;
 }
 
-typedef HRESULT(*INewErrMsg)(LPTSTR *, HRESULT);
-typedef void(*IDelErrMsg)(LPTSTR);
-
-static void MyMsgErr(HRESULT hrErr, INewErrMsg NewErrMsg, IDelErrMsg DelErrMsg)
-{
-	HWND const hwnd = GetConsoleWindow();
-	LPCTSTR pszMsg = TEXT("FATAL: Failed to alloc error message!");
-	LPTSTR pszErr = NULL;
-	fprintf(stderr, "HRESULT: 0x%.8lX \n", hrErr);
-	NewErrMsg(&pszErr, hrErr);
-	if (pszErr) {
-		pszMsg = pszErr;
-	}
-	MessageBox(hwnd, pszMsg, TEXT("ClevoKbled Error!"), MB_ICONERROR);
-	SAFEFREE(pszErr, DelErrMsg);
-}
-
+static void MyMsgErr(HRESULT hrCode);
 
 int main(void)
 {
 	HRESULT hr = 0;
-	RaymaiClevo_API aClevo = { 0 };
-	RaymaiClevo *pClevo = NULL;
-	RaymaiClevoKbled_API aKbled = { 0 };
-	RaymaiClevoKbled *pKbled = NULL;
-	Get_RaymaiClevo_API(&aClevo);
-	Get_RaymaiClevoKbled_API(&aKbled);
+	IRaymaiClevo *pClevo = NULL;
+	IRaymaiClevoKbled *pKbled = NULL;
 	hr = New_RaymaiClevo(&pClevo);
 	if (FAILED(hr)) {
 		fprintf(stderr, "Failed to create instance of RaymaiClevo.\n"
 			"Make sure you run as administrator.\n");
-		MyMsgErr(hr, aClevo.New_ErrMsg, aClevo.Del_ErrMsg);
+		MyMsgErr(hr);
 		goto eof;
 	}
 	hr = New_RaymaiClevoKbled(&pKbled, pClevo);
 	if (FAILED(hr)) {
-		MyMsgErr(hr, aKbled.New_ErrMsg, aKbled.Del_ErrMsg);
+		MyMsgErr(hr);
 		goto eof;
 	}
 	for (;;) {
@@ -110,9 +100,9 @@ int main(void)
 			printf(">> Set LED Brightness \n");
 			printf("Enter 0 ~ 255: ");
 			if (MyGetInputParseInt(&val, 0x00, 0xFF) != 0) { continue; }
-			hr = aKbled.SetBrightness(pKbled, (BYTE)val);
+			hr = pKbled->SetBrightness(pKbled, (BYTE)val);
 			if (FAILED(hr)) {
-				MyMsgErr(hr, aKbled.New_ErrMsg, aKbled.Del_ErrMsg);
+				MyMsgErr(hr);
 			}
 		}
 		break;
@@ -133,9 +123,9 @@ int main(void)
 			if (MyGetInputParseInt(&g, 0x00, 0xFF) != 0) { continue; }
 			printf("Enter B of RGB (0 ~ 255): ");
 			if (MyGetInputParseInt(&b, 0x00, 0xFF) != 0) { continue; }
-			hr = aKbled.SetColor(pKbled, i, (BYTE)r, (BYTE)g, (BYTE)b);
+			hr = pKbled->SetColor(pKbled, i, RGB(r, g, b));
 			if (FAILED(hr)) {
-				MyMsgErr(hr, aKbled.New_ErrMsg, aKbled.Del_ErrMsg);
+				MyMsgErr(hr);
 			}
 		}
 		break;
@@ -146,4 +136,69 @@ eof:
 	SAFEFREE(pKbled, Del_RaymaiClevoKbled);
 	SAFEFREE(pClevo, Del_RaymaiClevo);
 	return FAILED(hr) ? 1 : 0;
+}
+
+
+/*
+	Note that HRESULT returned by RaymaiClevo is Wbem HRESULT, so instead of
+	FormatMessage(), use IWbemStatusCodeText to get error message.
+*/
+#include <WbemIdl.h>
+
+static HRESULT My_New_DescWbem(LPTSTR *ppsz, HRESULT hrCode)
+{
+	BOOL coinit = CoInitialize(NULL);
+	HRESULT hr = 0;
+	IWbemStatusCodeText *pSCT = NULL;
+	BSTR bstrErr = NULL;
+	UINT cchErr = 0;
+	LPTSTR pszErr = NULL;
+	hr = CoCreateInstance(&CLSID_WbemStatusCodeText, NULL, CLSCTX_INPROC_SERVER,
+		&IID_IWbemStatusCodeText, (void**)&pSCT);
+	if (FAILED(hr)) goto eof;
+	hr = pSCT->lpVtbl->GetErrorCodeText(pSCT, hrCode, 0, 0, &bstrErr);
+	if (FAILED(hr)) goto eof;
+	cchErr = SysStringLen(bstrErr);
+	if (cchErr >= 2 && bstrErr[cchErr - 2] == '\r') {
+		bstrErr[cchErr - 2] = 0;
+	}
+#if defined(UNICODE)
+	pszErr = MemAllocZero((cchErr + 1) * sizeof(WCHAR));
+	if (!pszErr) {
+		hr = E_OUTOFMEMORY; goto eof;
+	}
+	CopyMemory(pszErr, bstrErr, cchErr * sizeof(WCHAR));
+#else
+	{
+		int cbErr = WideCharToMultiByte(CP_ACP, 0, bstrErr, cchErr, NULL, 0, NULL, NULL);
+		if (cbErr < 1) {
+			hr = E_UNEXPECTED; goto eof;
+		}
+		pszErr = MemAllocZero(cbErr + sizeof(char));
+		if (!pszErr) {
+			hr = E_OUTOFMEMORY; goto eof;
+		}
+		WideCharToMultiByte(CP_ACP, 0, bstrErr, cchErr, pszErr, cbErr, NULL, NULL);
+	}
+#endif
+	*ppsz = pszErr;
+eof:
+	SAFEFREE(bstrErr, SysFreeString);
+	SAFEFREE(pSCT, pSCT->lpVtbl->Release);
+	if (coinit) { CoUninitialize(); }
+	return hr;
+}
+
+static void MyMsgErr(HRESULT hrCode)
+{
+	HRESULT hr = 0;
+	LPTSTR pszDesc = NULL;
+	hr = My_New_DescWbem(&pszDesc, hrCode);
+	if (FAILED(hr)) {
+		fprintf(stderr, "Error 0x%.8X on get error message.\n", hr);
+		goto eof;
+	}
+	MessageBox(GetConsoleWindow(), pszDesc, NULL, MB_ICONERROR | MB_SYSTEMMODAL);
+eof:
+	SAFEFREE(pszDesc, MemFree);
 }
